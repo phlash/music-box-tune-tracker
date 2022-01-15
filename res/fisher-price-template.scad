@@ -20,6 +20,8 @@ hGroove = 1.2;
 overlap = 0.2;
 
 hasSecondSide = {SECOND_SIDE};
+beatsSideOne = {BEATS1};
+beatsSideTwo = {BEATS2};
 
 // Create disc
 module createDisc() {

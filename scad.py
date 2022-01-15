@@ -140,9 +140,11 @@ def to_scad(version, date_time, thickness, record, record_bis=None):
         content = content.replace("{DATE_TIME}", date_time)
         content = content.replace("{THICKNESS}", str(thickness))
         content = content.replace("{SECOND_SIDE}", "0" if record_bis is None else "1")
+        content = content.replace("{BEATS1}", str(record.beats_count))
+        content = content.replace("{BEATS2}", "0" if record_bis is None else str(record_bis.beats_count))
 
         indent = "\t" * 2
-        expanded_record = ExpandedRecord(86, 22, record)
+        expanded_record = ExpandedRecord(record.beats_count, 22, record)
         pins = get_pins(expanded_record, False)
         pin_str = pins_to_str(pins, indent)
 
@@ -152,7 +154,7 @@ def to_scad(version, date_time, thickness, record, record_bis=None):
             )
 
         if record_bis is not None:
-            expanded_record_bis = ExpandedRecord(86, 22, record_bis)
+            expanded_record_bis = ExpandedRecord(record_bis.beats_count, 22, record_bis)
             pins_bis = get_pins(expanded_record_bis, True)
             pin_str += pins_to_str(pins_bis, indent)
 
