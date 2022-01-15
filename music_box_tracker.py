@@ -189,7 +189,7 @@ def main(stdscr, port, input, program):
 
 def play(stdscr, port, record, input):
     t = threading.currentThread()
-    FPR_SEC_BETWEEN_BEATS = 0.5
+    FPR_SEC_BETWEEN_BEATS = 25.0 / record.beats_count;  # typical players have a 25s rotation period
     PROGRESS_INDICATOR_Y = input.tracks_count + input.offset_y + input.start_y
 
     for beat_index in range(input.player_start_at, record.beats_count):
