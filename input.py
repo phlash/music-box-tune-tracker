@@ -19,7 +19,7 @@ class Input:
 
     def __init__(self, record=None, window=None):
         self.record = record
-        if record and self.beats_count != record.beats_count:
+        if record and self.beats_count > record.beats_count:
             self.beats_count = record.beats_count
         self.window = window
 
