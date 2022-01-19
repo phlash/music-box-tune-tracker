@@ -4,7 +4,7 @@ import sys
 import os
 import argparse
 import time
-import threading
+import threading, queue
 
 import mido
 from mido import MidiFile
@@ -55,9 +55,14 @@ def import_from_mid(record, filename):
             break
 
 
+def draw_after_scroll(input):
+    input.draw_partition()
+    input.draw_player_start_at()
+    input.draw_beat_index()
+
 def main(stdscr, port, input, program):
-    cursor_y = input.start_y + input.offset_x
-    cursor_x = input.start_x + input.offset_y
+    cursor_y = input.start_y + input.offset_y
+    cursor_x = input.start_x + input.offset_x
 
     curses.start_color()
     curses.use_default_colors()
@@ -74,73 +79,86 @@ def main(stdscr, port, input, program):
     editwin = curses.newwin(1, 79, 20, 1)
     editwin.addstr(0, 0, record.title)
     box = curses.textpad.Textbox(editwin, insert_mode=True)
-    stdscr.move(cursor_y, cursor_x)
 
     thread_player = None  # thread to play music in background
+    stdscr.nodelay(True)  # poll for keys, so we can process player thread updates
+    play_q = queue.Queue() # update messages (position) from player
 
     while True:
-        ch = stdscr.getch()
+        ch = stdscr.getch(cursor_y, cursor_x)
 
-        if ch == curses.KEY_UP:
+        if ch == curses.ERR:
+            # no keys pressed, process player thread updates then sleep for a few msec
+            while not play_q.empty():
+                play_beat = play_q.get()
+                input.draw_player_start_at(play_beat)
+                stdscr.refresh()  # force fast refresh before sleeping..
+            time.sleep(0.01)
+
+        elif ch == curses.KEY_UP:
             next_y = cursor_y - 1
             if input.can_move(next_y, cursor_x):
                 cursor_y = next_y
-                input.draw(cursor_x, cursor_y)
-                stdscr.move(cursor_y, cursor_x)
+                input.draw_tones(cursor_y)
         elif ch == curses.KEY_DOWN:
             next_y = cursor_y + 1
             if input.can_move(next_y, cursor_x):
                 cursor_y = next_y
-                input.draw(cursor_x, cursor_y)
-                stdscr.move(cursor_y, cursor_x)
+                input.draw_tones(cursor_y)
         elif ch == curses.KEY_LEFT:
             next_x = cursor_x - 1
             if input.can_move(cursor_y, next_x):
                 cursor_x = next_x
-                stdscr.move(cursor_y, cursor_x)
             elif input.display_from > 0:
                 input.display_from -= 1
-                input.draw_partition()
-                input.draw_player_start_at()
-                input.draw_beat_index()
+                draw_after_scroll(input)
         elif ch == curses.KEY_RIGHT:
             next_x = cursor_x + 1
             if input.can_move(cursor_y, next_x):
                 cursor_x = next_x
-                stdscr.move(cursor_y, cursor_x)
             elif input.display_from + cursor_x < record.beats_count:
                 input.display_from += 1
-                input.draw_partition()
-                input.draw_player_start_at()
-                input.draw_beat_index()
+                draw_after_scroll(input)
+        elif ch == curses.KEY_SLEFT:
+            input.display_from -= input.beats_count
+            if input.display_from < 0:
+                input.display_from = 0
+            draw_after_scroll(input)
+        elif ch == curses.KEY_SRIGHT:
+            input.display_from += input.beats_count
+            if input.display_from > record.beats_count - input.beats_count:
+                input.display_from = record.beats_count - input.beats_count
+            draw_after_scroll(input)
+        elif ch == curses.KEY_HOME:
+            input.display_from = 0
+            cursor_x = input.start_x + input.offset_x
+            draw_after_scroll(input)
+        elif ch == curses.KEY_END:
+            input.display_from = record.beats_count - input.beats_count
+            cursor_x = input.start_x + input.offset_x + input.beats_count - 1
+            draw_after_scroll(input)
         elif ch == ord("x"):
             export_to_mid(record, program)
         elif ch == ord("o"):
             input.player_start_at_value(input.display_from + cursor_x - 1)
-            input.draw(cursor_x, cursor_y)
-            stdscr.move(cursor_y, cursor_x)
+            input.draw_player_start_at()
         elif ch == ord("u"):
             input.player_start_at_dec()
-            input.draw(cursor_x, cursor_y)
-            stdscr.move(cursor_y, cursor_x)
+            input.draw_player_start_at()
         elif ch == ord("i"):
             input.player_start_at_inc()
-            input.draw(cursor_x, cursor_y)
-            stdscr.move(cursor_y, cursor_x)
+            input.draw_player_start_at()
         elif ch == ord("+"):
             record.right_shift(cursor_x - 1)
             input.draw_partition()
-            stdscr.move(cursor_y, cursor_x)
         elif ch == ord("-"):
             record.left_shift(cursor_x - 1)
             input.draw_partition()
-            stdscr.move(cursor_y, cursor_x)
         elif ch == ord("e"):
             box.edit()
             title = box.gather()
             input.record.title = title
             input.draw(cursor_x, cursor_y)
-            stdscr.move(cursor_y, cursor_x)
         elif ch == ord(" "):
             x = input.display_from + cursor_x - 1
             y = cursor_y - 1
@@ -148,14 +166,12 @@ def main(stdscr, port, input, program):
                 y = input.tracks_count - 1 - y
             record.reverse_note(x, y)
             input.draw_partition()
-            stdscr.move(cursor_y, cursor_x)
         elif ch == ord("t"):
             track_index = cursor_y - (input.start_y + input.offset_y)
             if input.tone_descending:
                 track_index = input.tracks_count - 1 - track_index
             port.send(mido.Message("note_on", note=record.NOTES[track_index]))
         elif ch == ord("r"):
-            stdscr.move(cursor_y, cursor_x)
             beats = record.get_beats(cursor_x - 1)
             for track_index in range(len(beats)):
                 if beats[track_index]:
@@ -164,19 +180,16 @@ def main(stdscr, port, input, program):
             if thread_player is not None and thread_player.is_alive():
                 thread_player.do_run = False
                 thread_player.join()
-                input.draw(cursor_x, cursor_y)
             else:
                 thread_player = threading.Thread(
-                    target=play, args=(stdscr, port, record, input)
+                    target=play, args=(play_q, port, record, input)
                 )
                 thread_player.start()
-            stdscr.move(cursor_y, cursor_x)
         elif ch == ord("s"):
             record.save()
         elif ch == ord("l"):
             record.load()
             input.draw(cursor_x, cursor_y)
-            stdscr.move(cursor_y, cursor_x)
         elif ch == ord("q"):
             break
 
@@ -187,15 +200,13 @@ def main(stdscr, port, input, program):
     port.close()
 
 
-def play(stdscr, port, record, input):
+def play(play_q, port, record, input):
     t = threading.currentThread()
-    FPR_SEC_BETWEEN_BEATS = 0.5
-    PROGRESS_INDICATOR_Y = input.tracks_count + input.offset_y + input.start_y
+    FPR_SEC_BETWEEN_BEATS = (25.0 / record.beats_count) if input.wholedisc else 0.5
 
     for beat_index in range(input.player_start_at, record.beats_count):
         if getattr(t, "do_run", True) == False:
-            stdscr.hline(PROGRESS_INDICATOR_Y, 0, " ", input.beats_count)
-            return
+            break
         for track_index in range(input.tracks_count):
             if record.has_note(beat_index, track_index):
                 port.send(mido.Message("note_on", note=record.NOTES[track_index]))
@@ -203,14 +214,9 @@ def play(stdscr, port, record, input):
         for track_index in range(input.tracks_count):
             if record.has_note(beat_index, track_index):
                 port.send(mido.Message("note_off", note=record.NOTES[track_index]))
-
         # update progress indicator
-        progress_indicator_x = beat_index + input.offset_x - input.display_from
-        if progress_indicator_x <= input.beats_count:
-            stdscr.move(PROGRESS_INDICATOR_Y, progress_indicator_x)
-            stdscr.addch("△")
-            stdscr.refresh()
-    stdscr.hline(PROGRESS_INDICATOR_Y, 0, " ", input.beats_count + input.offset_x)
+        play_q.put(beat_index)
+    play_q.put(-1)
 
 
 if __name__ == "__main__":
@@ -228,6 +234,9 @@ if __name__ == "__main__":
     parser.add_argument("--title", help="set the title of a new tune")
     parser.add_argument(
         "--low", help="display low pitch notes first", action="store_true"
+    )
+    parser.add_argument(
+        "--wholedisc", help="assume FPR occupies the whole disc", action="store_true"
     )
 
     args = parser.parse_args()
@@ -263,6 +272,8 @@ if __name__ == "__main__":
     input = Input(record)
     if args.low:
         input.tone_descending = False
+    if args.wholedisc:
+        input.wholedisc = True
 
     try:
         curses.wrapper(main, port, input, program)
