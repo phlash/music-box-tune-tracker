@@ -119,12 +119,12 @@ def main(stdscr, port, input, program):
             elif input.display_from + cursor_x < record.beats_count:
                 input.display_from += 1
                 draw_after_scroll(input)
-        elif ch == curses.KEY_SLEFT:
+        elif ch == curses.KEY_SLEFT or ch == curses.KEY_PPAGE:
             input.display_from -= input.beats_count
             if input.display_from < 0:
                 input.display_from = 0
             draw_after_scroll(input)
-        elif ch == curses.KEY_SRIGHT:
+        elif ch == curses.KEY_SRIGHT or ch == curses.KEY_NPAGE:
             input.display_from += input.beats_count
             if input.display_from > record.beats_count - input.beats_count:
                 input.display_from = record.beats_count - input.beats_count
