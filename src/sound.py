@@ -27,17 +27,17 @@ def play_note(note, audio, midi=None):
         ).start()
 
 
-def play(audio, midi, record, start_at, on_note_callback):
+def play(audio, midi, record, start_at, play_q):
     t = threading.currentThread()
-    FPR_SEC_BETWEEN_BEATS = 0.5
+    FPR_SEC_BETWEEN_BEATS = (25.0 / record.beats_count ) # TODO: 0.5
 
     for beat_index in range(start_at, record.beats_count):
         if getattr(t, "do_run", True) == False:
-            return
+            break
 
         for tone_index in range(Record.TONES_COUNT):
             if record.has_note(beat_index, tone_index):
                 play_note(record.NOTES[tone_index], audio, midi)
         time.sleep(FPR_SEC_BETWEEN_BEATS)
-
-        on_note_callback(beat_index)
+        play_q.put(beat_index)
+    play_q.put(-1)

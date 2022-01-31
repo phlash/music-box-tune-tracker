@@ -32,7 +32,7 @@ class CursesDisplay:
     def draw_beat_index(self, cursor_x):
         for beat_index in range(0, self.beats_count):
             y = self.start_y + self.offset_y + Record.TONES_COUNT + 1
-            beat_index_with_offset_display = str(beat_index + self.display_from + 1)
+            beat_index_with_offset_display = str(beat_index + self.display_from + 1).rjust(3,' ')
 
             cursor_on_current_index = cursor_x - 1 == beat_index
             if cursor_on_current_index:
@@ -53,6 +53,18 @@ class CursesDisplay:
         """Read parition and populate the screen"""
         NOTE_CH = "•"
         EMPTY_CH = "_"
+
+        # scroll indicators
+        self.window.move(self.start_y, self.start_x)
+        if self.display_from > 0:
+            self.window.addch("<")
+        else:
+            self.window.addch("┌")
+        self.window.move(self.start_y, self.start_x + self.offset_x + self.beats_count)
+        if self.beats_count + self.display_from < self.record.beats_count:
+            self.window.addch(">")
+        else:
+            self.window.addch("┐")
 
         tones_range = range(Record.TONES_COUNT)
         for track_index in tones_range:
@@ -87,35 +99,20 @@ class CursesDisplay:
                     self.window.addch(ch)
                     self.window.attroff(attr)
 
-    def draw_player_start_at(self):
+    def draw_player_start_at(self, play_beat=-1):
         y = Record.TONES_COUNT + self.offset_y + self.start_y
-        self.window.hline(y, 0, "_", self.beats_count + self.offset_x)
-
-        x = self.player_start_at + self.offset_x - self.display_from
-        if x > 0 and x <= self.beats_count:
+        sx = self.player_start_at + self.offset_x - self.display_from
+        px = play_beat + self.offset_x - self.display_from
+        for x in range(self.start_x + self.offset_x, self.start_x + self.offset_x + self.beats_count):
             self.window.move(y, x)
-            self.window.addch("▲")
+            if x == sx:
+                self.window.addch("▲")
+            elif x > sx and x <= px:
+                self.window.addch("△")
+            else:
+                self.window.addch("─")
 
-    def draw(self, cursor_x, cursor_y):
-        # draw border
-        rectangle(
-            self.window,
-            self.start_y,
-            self.start_x,
-            Record.TONES_COUNT + self.offset_y + self.start_y,
-            self.beats_count + self.offset_x + self.start_x,
-        )
-
-        # title
-        if self.record.title is not None:
-            self.window.addstr(self.start_y, self.start_x + 2, self.record.title)
-
-        # draw partition table
-        self.draw_partition()
-        self.draw_player_start_at()
-
-        self.draw_beat_index(cursor_x)
-
+    def draw_tones(self, cursor_y):
         # draw tones
         tones = [
             "G4 Sol",
@@ -147,6 +144,27 @@ class CursesDisplay:
             if cursor_on_current_tone:
                 self.window.attroff(curses.color_pair(ui_curses.const.PAIR_HIGHLIGHT))
 
+    def draw(self, cursor_x, cursor_y):
+        # draw border
+        rectangle(
+            self.window,
+            self.start_y,
+            self.start_x,
+            Record.TONES_COUNT + self.offset_y + self.start_y,
+            self.beats_count + self.offset_x + self.start_x,
+        )
+
+        # title
+        if self.record.title is not None:
+            self.window.addstr(self.start_y, self.start_x + 2, self.record.title)
+
+        # draw partition table
+        self.draw_partition()
+        self.draw_player_start_at()
+
+        self.draw_beat_index(cursor_x)
+        self.draw_tones(cursor_y)
+
     def can_move(self, y, x):
         return (
             y > self.start_y
@@ -157,11 +175,6 @@ class CursesDisplay:
 
     def player_start_at_value(self, value):
         if value < self.record.beats_count and value >= 0:
-            self.window.move(
-                Record.TONES_COUNT + self.offset_y + 1,
-                self.player_start_at + self.offset_x,
-            )
-            self.window.addch(" ")
             self.player_start_at = value
 
     def player_start_at_inc(self):
